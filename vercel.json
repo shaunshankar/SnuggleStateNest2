@@ -9,6 +9,7 @@
     { "src": "/api/savings/contribute",    "dest": "/api/savings?action=contribute" },
     { "src": "/api/savings/([^/]+)",       "dest": "/api/savings?id=$1" },
     { "src": "/api/(.*)",                  "dest": "/api/$1" },
+    { "handle": "filesystem" },
     { "src": "/(.*)",                      "dest": "/index.html" }
   ],
   "crons": [
