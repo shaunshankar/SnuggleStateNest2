@@ -1,15 +1,17 @@
 {
   "routes": [
-    { "handle": "filesystem" },
+    { "src": "/api/auth/([^/]+)",          "dest": "/api/auth?action=$1" },
+    { "src": "/api/ai/([^/]+)",            "dest": "/api/ai?action=$1" },
     { "src": "/api/households/join",       "dest": "/api/households?action=join" },
     { "src": "/api/transactions/([^/]+)",  "dest": "/api/transactions?id=$1" },
     { "src": "/api/bills/pay",             "dest": "/api/bills?action=pay" },
     { "src": "/api/bills/([^/]+)",         "dest": "/api/bills?id=$1" },
     { "src": "/api/savings/contribute",    "dest": "/api/savings?action=contribute" },
     { "src": "/api/savings/([^/]+)",       "dest": "/api/savings?id=$1" },
+    { "src": "/api/(.*)",                  "dest": "/api/$1" },
     { "src": "/(.*)",                      "dest": "/index.html" }
   ],
   "crons": [
-    { "path": "/api/cron/bill-reminders", "schedule": "0 8 * * *" }
+    { "path": "/api/cron", "schedule": "0 8 * * *" }
   ]
 }

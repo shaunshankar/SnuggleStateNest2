@@ -1,5 +1,5 @@
-const { requireAuth } = require('../_auth')
-const { handleCors } = require('../_cors')
+const { requireAuth } = require('./_auth')
+const { handleCors } = require('./_cors')
 require('dotenv').config()
 
 module.exports = async function handler(req, res) {
@@ -7,10 +7,8 @@ module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end()
   const auth = requireAuth(req, res)
   if (!auth) return
-
   const action = req.query.action
 
-  // POST /api/ai/categorise
   if (action === 'categorise') {
     const { description } = req.body || {}
     if (!description) return res.status(400).json({ message: 'Description required' })
@@ -25,10 +23,9 @@ module.exports = async function handler(req, res) {
       })
       const data = await response.json()
       return res.json({ category: data.content?.[0]?.text?.trim().toLowerCase() || 'other' })
-    } catch (err) { console.error(err); return res.json({ category: 'other' }) }
+    } catch { return res.json({ category: 'other' }) }
   }
 
-  // POST /api/ai/import
   if (action === 'import') {
     const { csv } = req.body || {}
     if (!csv) return res.status(400).json({ message: 'CSV content required' })
