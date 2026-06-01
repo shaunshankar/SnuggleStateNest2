@@ -55,6 +55,32 @@ module.exports = async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
+    // Batch import with deduplication
+    if (Array.isArray(req.body?.transactions)) {
+      const rows = req.body.transactions
+      let imported = 0
+      let skipped = 0
+      try {
+        for (const tx of rows) {
+          const dup = await pool.query(
+            `SELECT id FROM nest.transactions
+             WHERE household_id=$1 AND date=$2 AND amount=$3 AND description=$4`,
+            [auth.householdId, tx.date, tx.amount, tx.description]
+          )
+          if (dup.rows.length) { skipped++; continue }
+          await pool.query(
+            `INSERT INTO nest.transactions
+               (household_id, user_email, amount, type, category, description, date, notes, is_imported, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,true,$9)`,
+            [auth.householdId, auth.email, tx.amount, tx.type, tx.category, tx.description, tx.date, tx.notes || null, auth.userId]
+          )
+          imported++
+        }
+        return res.json({ imported, skipped })
+      } catch (err) { console.error(err); return res.status(500).json({ message: 'Server error' }) }
+    }
+
+    // Single transaction
     const { amount, type, category, description, date, notes, is_imported } = req.body || {}
     if (!amount || !type || !category || !description || !date)
       return res.status(400).json({ message: 'Missing required fields' })
