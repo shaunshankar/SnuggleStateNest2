@@ -1,14 +1,12 @@
 const bcrypt = require('bcryptjs')
-const { getPool } = require('../_db')
-const { requireAuth } = require('../_auth')
-const { handleCors } = require('../_cors')
+const { getPool } = require('./_db')
+const { requireAuth } = require('./_auth')
+const { handleCors } = require('./_cors')
 
 module.exports = async function handler(req, res) {
   if (handleCors(req, res)) return
-
   const auth = requireAuth(req, res)
   if (!auth) return
-
   const pool = getPool()
 
   if (req.method === 'GET') {
@@ -18,15 +16,12 @@ module.exports = async function handler(req, res) {
         [auth.userId]
       )
       if (!rows.length) return res.status(404).json({ message: 'Not found' })
-      res.json({ user: rows[0] })
-    } catch (err) {
-      console.error(err)
-      res.status(500).json({ message: 'Server error' })
-    }
+      return res.json({ user: rows[0] })
+    } catch (err) { console.error(err); return res.status(500).json({ message: 'Server error' }) }
+  }
 
-  } else if (req.method === 'PUT') {
+  if (req.method === 'PUT') {
     const { name, monthly_income, email_notifications, current_password, new_password } = req.body || {}
-
     try {
       if (new_password) {
         if (!current_password) return res.status(400).json({ message: 'Current password required' })
@@ -36,7 +31,6 @@ module.exports = async function handler(req, res) {
         const hash = await bcrypt.hash(new_password, 12)
         await pool.query('UPDATE nest.users SET password_hash=$1 WHERE id=$2', [hash, auth.userId])
       }
-
       const { rows } = await pool.query(
         `UPDATE nest.users
          SET name=COALESCE($1, name),
@@ -46,21 +40,16 @@ module.exports = async function handler(req, res) {
          RETURNING id, email, name, household_id, role, monthly_income, email_notifications`,
         [name || null, monthly_income ?? null, email_notifications ?? null, auth.userId]
       )
-      res.json({ user: rows[0] })
-    } catch (err) {
-      console.error(err)
-      res.status(500).json({ message: 'Server error' })
-    }
-
-  } else if (req.method === 'DELETE') {
-    try {
-      await pool.query('UPDATE nest.users SET household_id=NULL, role=$1 WHERE id=$2', ['member', auth.userId])
-      res.json({ success: true })
-    } catch (err) {
-      console.error(err)
-      res.status(500).json({ message: 'Server error' })
-    }
-  } else {
-    res.status(405).end()
+      return res.json({ user: rows[0] })
+    } catch (err) { console.error(err); return res.status(500).json({ message: 'Server error' }) }
   }
+
+  if (req.method === 'DELETE') {
+    try {
+      await pool.query(`UPDATE nest.users SET household_id=NULL, role='member' WHERE id=$1`, [auth.userId])
+      return res.json({ success: true })
+    } catch (err) { console.error(err); return res.status(500).json({ message: 'Server error' }) }
+  }
+
+  res.status(405).end()
 }

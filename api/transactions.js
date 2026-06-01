@@ -1,6 +1,6 @@
-const { getPool } = require('../_db')
-const { requireAuth } = require('../_auth')
-const { handleCors } = require('../_cors')
+const { getPool } = require('./_db')
+const { requireAuth } = require('./_auth')
+const { handleCors } = require('./_cors')
 
 module.exports = async function handler(req, res) {
   if (handleCors(req, res)) return
@@ -8,7 +8,32 @@ module.exports = async function handler(req, res) {
   if (!auth) return
   if (!auth.householdId) return res.status(403).json({ message: 'No household' })
   const pool = getPool()
+  const id = req.query.id  // set by rewrite for /api/transactions/:id
 
+  // /api/transactions/:id  — update & delete
+  if (id) {
+    if (req.method === 'PUT') {
+      const { amount, type, category, description, date, notes } = req.body || {}
+      try {
+        const { rows } = await pool.query(
+          `UPDATE nest.transactions SET amount=$1,type=$2,category=$3,description=$4,date=$5,notes=$6
+           WHERE id=$7 AND household_id=$8 RETURNING *`,
+          [amount, type, category, description, date, notes || null, id, auth.householdId]
+        )
+        if (!rows.length) return res.status(404).json({ message: 'Not found' })
+        return res.json({ transaction: rows[0] })
+      } catch (err) { console.error(err); return res.status(500).json({ message: 'Server error' }) }
+    }
+    if (req.method === 'DELETE') {
+      try {
+        await pool.query('DELETE FROM nest.transactions WHERE id=$1 AND household_id=$2', [id, auth.householdId])
+        return res.json({ success: true })
+      } catch (err) { console.error(err); return res.status(500).json({ message: 'Server error' }) }
+    }
+    return res.status(405).end()
+  }
+
+  // /api/transactions  — list & create
   if (req.method === 'GET') {
     const { category, type, search, from, to, limit = 100, offset = 0 } = req.query
     let where = ['household_id = $1']
@@ -27,8 +52,9 @@ module.exports = async function handler(req, res) {
       )
       return res.json({ transactions: rows })
     } catch (err) { console.error(err); return res.status(500).json({ message: 'Server error' }) }
+  }
 
-  } else if (req.method === 'POST') {
+  if (req.method === 'POST') {
     const { amount, type, category, description, date, notes, is_imported } = req.body || {}
     if (!amount || !type || !category || !description || !date)
       return res.status(400).json({ message: 'Missing required fields' })
