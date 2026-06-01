@@ -166,3 +166,43 @@ BEGIN
   RETURN code;
 END;
 $$;
+
+-- ─────────────────────────────────────────────────────────────
+-- LOANS (private to user, not shared with household)
+-- ─────────────────────────────────────────────────────────────
+
+CREATE TABLE nest.loans (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id              UUID NOT NULL REFERENCES nest.users(id) ON DELETE CASCADE,
+  name                 TEXT NOT NULL,
+  type                 TEXT CHECK (type IN ('home', 'car', 'personal', 'other')) DEFAULT 'other',
+  original_amount      NUMERIC(12,2) NOT NULL,
+  current_balance      NUMERIC(12,2) NOT NULL,
+  interest_rate        NUMERIC(6,4) NOT NULL,
+  minimum_repayment    NUMERIC(10,2) NOT NULL,
+  repayment_frequency  TEXT DEFAULT 'monthly' CHECK (repayment_frequency IN ('weekly', 'fortnightly', 'monthly')),
+  start_date           DATE,
+  years_remaining      NUMERIC(5,2) NOT NULL,
+  extra_repayment      NUMERIC(10,2) DEFAULT 0,
+  notes                TEXT,
+  created_at           TIMESTAMPTZ DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE nest.loan_repayments (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  loan_id           UUID NOT NULL REFERENCES nest.loans(id) ON DELETE CASCADE,
+  date              DATE NOT NULL,
+  amount            NUMERIC(10,2) NOT NULL,
+  principal_portion NUMERIC(10,2),
+  interest_portion  NUMERIC(10,2),
+  balance_after     NUMERIC(12,2),
+  is_extra          BOOLEAN DEFAULT FALSE,
+  notes             TEXT,
+  created_at        TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_nest_loans_user ON nest.loans(user_id);
+CREATE INDEX idx_nest_loan_repayments_loan ON nest.loan_repayments(loan_id);
+
+CREATE TRIGGER trg_loans_updated_at BEFORE UPDATE ON nest.loans FOR EACH ROW EXECUTE FUNCTION nest.set_updated_at();

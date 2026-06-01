@@ -26,6 +26,11 @@ app.all('/api/savings/:id', (req, res) => { req.query.id = req.params.id; requir
 app.all('/api/savings', require('./api/savings'))
 
 app.get('/api/reports', require('./api/reports'))
+
+app.post('/api/loans/repay',    (req, res) => { req.query.action = 'repay';    require('./api/loans')(req, res) })
+app.post('/api/loans/insights', (req, res) => { req.query.action = 'insights'; require('./api/loans')(req, res) })
+app.all('/api/loans/:id',       (req, res) => { req.query.id = req.params.id;  require('./api/loans')(req, res) })
+app.all('/api/loans',           require('./api/loans'))
 app.all('/api/users',   require('./api/users'))
 app.all('/api/cron',    require('./api/cron'))
 

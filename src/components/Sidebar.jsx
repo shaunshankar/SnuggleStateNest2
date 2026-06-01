@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, ArrowLeftRight, PieChart, Receipt, Target, BarChart3, Home, Settings, LogOut, Bird } from 'lucide-react'
+import { LayoutDashboard, ArrowLeftRight, PieChart, Receipt, Target, BarChart3, Home, Settings, LogOut, Bird, Landmark } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { initials } from '../utils/formatters'
 
@@ -9,6 +9,7 @@ const links = [
   { to: '/budgets', icon: PieChart, label: 'Budgets' },
   { to: '/bills', icon: Receipt, label: 'Bills' },
   { to: '/savings', icon: Target, label: 'Savings' },
+  { to: '/loans', icon: Landmark, label: 'Loans' },
   { to: '/reports', icon: BarChart3, label: 'Reports' },
   { to: '/household', icon: Home, label: 'Household' },
 ]

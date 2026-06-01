@@ -8,6 +8,9 @@
     { "src": "/api/bills/([^/]+)",         "dest": "/api/bills?id=$1" },
     { "src": "/api/savings/contribute",    "dest": "/api/savings?action=contribute" },
     { "src": "/api/savings/([^/]+)",       "dest": "/api/savings?id=$1" },
+    { "src": "/api/loans/repay",           "dest": "/api/loans?action=repay" },
+    { "src": "/api/loans/insights",        "dest": "/api/loans?action=insights" },
+    { "src": "/api/loans/([^/]+)",         "dest": "/api/loans?id=$1" },
     { "src": "/api/(.*)",                  "dest": "/api/$1" },
     { "handle": "filesystem" },
     { "src": "/(.*)",                      "dest": "/index.html" }

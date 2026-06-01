@@ -11,6 +11,7 @@ import Budgets from './pages/Budgets'
 import Bills from './pages/Bills'
 import Savings from './pages/Savings'
 import Reports from './pages/Reports'
+import Loans from './pages/Loans'
 import Household from './pages/Household'
 import Settings from './pages/Settings'
 import { PageLoader } from './components/LoadingSpinner'
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="/bills" element={<Bills />} />
             <Route path="/savings" element={<Savings />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/loans" element={<Loans />} />
             <Route path="/household" element={<Household />} />
           </Route>
           <Route path="/settings" element={<Settings />} />
