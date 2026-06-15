@@ -2,7 +2,7 @@ const { requireAuth } = require('./_auth')
 const { handleCors } = require('./_cors')
 require('dotenv').config()
 
-const CATEGORIES = 'housing, groceries, transport, utilities, entertainment, dining, health, personal_care, education, savings, income, other'
+const CATEGORIES = 'housing, groceries, transport, utilities, entertainment, dining, health, personal_care, education, subscriptions, insurance, shopping, fitness, gifts, fees, savings, income, other'
 
 async function callClaude({ model, max_tokens, prompt }) {
   if (!process.env.ANTHROPIC_API_KEY) {
