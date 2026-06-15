@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Pencil, Trash2, Target, PlusCircle } from 'lucide-react'
+import { Plus, Pencil, Trash2, Target, PlusCircle, Sparkles, X } from 'lucide-react'
 import { api } from '../utils/api'
 import { formatCurrency, formatDate } from '../utils/formatters'
 import ProgressRing from '../components/ProgressRing'
@@ -18,8 +18,53 @@ export default function Savings() {
   const [contribForm, setContribForm] = useState(EMPTY_CONTRIB)
   const [saving, setSaving] = useState(false)
   const [celebrating, setCelebrating] = useState(null)
+  const [detecting, setDetecting] = useState(false)
+  const [detected, setDetected] = useState(null)
+  const [logging, setLogging] = useState(false)
 
   useEffect(() => { loadGoals() }, [])
+
+  async function handleDetect() {
+    if (!goals.length) { toast.error('Create a savings goal first so detected transfers have somewhere to go'); return }
+    setDetecting(true)
+    try {
+      const { transactions } = await api.get('/transactions', { limit: 500 })
+      if (!transactions?.length) { toast.error('No transactions to analyse yet — import a statement first'); return }
+      const { savings } = await api.post('/ai/detect', { transactions })
+      if (!savings?.length) { toast('No savings movements found in your transactions', { icon: '🔍' }); return }
+      setDetected(savings.map(s => ({
+        description: s.description || 'Transfer to savings',
+        amount: parseFloat(s.amount || 0).toFixed(2),
+        date: (s.date || new Date().toISOString().split('T')[0]).split('T')[0],
+        goal_id: goals[0].id,
+        selected: true
+      })))
+    } catch (err) { toast.error(err.message) }
+    finally { setDetecting(false) }
+  }
+
+  function updateDetected(idx, field, value) {
+    setDetected(rows => rows.map((r, i) => i === idx ? { ...r, [field]: value } : r))
+  }
+
+  async function handleLogDetected() {
+    const selected = detected.filter(r => r.selected)
+    if (!selected.length) return toast.error('Nothing selected')
+    setLogging(true)
+    let logged = 0
+    try {
+      for (const s of selected) {
+        const { goal } = await api.post('/savings/contribute', {
+          goal_id: s.goal_id, amount: s.amount, date: s.date, notes: s.description
+        })
+        setGoals(gs => gs.map(g => g.id === goal.id ? goal : g))
+        logged++
+      }
+      toast.success(`Logged ${logged} contribution${logged !== 1 ? 's' : ''}`)
+      setDetected(null)
+    } catch (err) { toast.error(err.message) }
+    finally { setLogging(false) }
+  }
 
   async function loadGoals() {
     setLoading(true)
@@ -88,9 +133,14 @@ export default function Savings() {
           <h2>Savings Goals</h2>
           <p>Track your household savings and milestones</p>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={openAdd}>
-          <Plus size={15} /> New Goal
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn-secondary btn-sm" onClick={handleDetect} disabled={detecting}>
+            <Sparkles size={15} /> {detecting ? 'Analysing…' : 'Detect savings (AI)'}
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={openAdd}>
+            <Plus size={15} /> New Goal
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -217,6 +267,66 @@ export default function Savings() {
           </div>
         </div>
       )}
+
+      {/* AI-detected savings movements */}
+      {detected && (
+        <div className="modal-overlay" onClick={() => { if (!logging) setDetected(null) }}>
+          <div className="modal modal-wide" style={{ maxWidth: 720 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={18} color="var(--gold)" /> Detected savings movements</h3>
+              {!logging && <button className="btn btn-ghost btn-icon" onClick={() => setDetected(null)}><X size={18} /></button>}
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', marginBottom: 16 }}>
+              These look like transfers into savings. Pick a goal for each and log them as contributions.
+            </p>
+
+            <div style={{ maxHeight: 400, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 1 }}>
+                  <tr>
+                    {['', 'Description', 'Amount', 'Date', 'Goal'].map((h, i) => (
+                      <th key={i} style={{ padding: '10px 10px', textAlign: 'left', fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {detected.map((s, i) => (
+                    <tr key={i} style={{ opacity: s.selected ? 1 : 0.4 }}>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <input type="checkbox" checked={s.selected} onChange={e => updateDetected(i, 'selected', e.target.checked)} style={{ width: 14, height: 14, cursor: 'pointer' }} />
+                      </td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: '0.82rem' }}>{s.description}</td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <input type="number" step="0.01" value={s.amount} onChange={e => updateDetected(i, 'amount', e.target.value)} style={{ ...sInputStyle, width: 90 }} />
+                      </td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <input type="date" value={s.date} onChange={e => updateDetected(i, 'date', e.target.value)} style={sInputStyle} />
+                      </td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <select value={s.goal_id} onChange={e => updateDetected(i, 'goal_id', e.target.value)} style={sInputStyle}>
+                          {goals.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="modal-actions" style={{ marginTop: 16 }}>
+              <button className="btn btn-ghost" onClick={() => setDetected(null)} disabled={logging}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleLogDetected} disabled={logging || detected.filter(s => s.selected).length === 0}>
+                {logging ? 'Logging…' : `Log ${detected.filter(s => s.selected).length} selected`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
+}
+
+const sInputStyle = {
+  background: 'var(--bg-input)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6,
+  color: 'var(--text-primary)', padding: '4px 8px', fontSize: '0.8rem', width: '100%'
 }

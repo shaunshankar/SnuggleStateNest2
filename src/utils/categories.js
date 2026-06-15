@@ -9,6 +9,18 @@ export const CATEGORY_ICONS = {
   education: '📚', savings: '💰', income: '💵', other: '📦'
 }
 
+export const SOURCES = ['everyday', 'savings', 'credit_card']
+
+export const SOURCE_LABELS = {
+  everyday: 'Everyday',
+  savings: 'Savings',
+  credit_card: 'Credit Card'
+}
+
+export const SOURCE_ICONS = {
+  everyday: '🏦', savings: '🐷', credit_card: '💳'
+}
+
 export const CATEGORY_COLOURS = {
   housing: '#6366f1', groceries: '#22c55e', transport: '#3b82f6',
   utilities: '#f59e0b', entertainment: '#ec4899', dining: '#f97316',

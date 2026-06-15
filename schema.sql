@@ -72,6 +72,7 @@ CREATE TABLE nest.transactions (
   date         DATE NOT NULL,
   notes        TEXT,
   is_imported  BOOLEAN DEFAULT FALSE,
+  source       TEXT NOT NULL DEFAULT 'everyday',  -- 'everyday' | 'savings' | 'credit_card'
   created_by   UUID REFERENCES nest.users(id) ON DELETE SET NULL,
   created_at   TIMESTAMPTZ DEFAULT NOW(),
   updated_at   TIMESTAMPTZ DEFAULT NOW()
@@ -94,6 +95,7 @@ CREATE TABLE nest.bills (
   category     TEXT NOT NULL,
   is_paid      BOOLEAN DEFAULT FALSE,
   paid_date    DATE,
+  detected     BOOLEAN DEFAULT FALSE,  -- TRUE when AI-detected from statements
   created_by   UUID REFERENCES nest.users(id) ON DELETE SET NULL,
   created_at   TIMESTAMPTZ DEFAULT NOW(),
   updated_at   TIMESTAMPTZ DEFAULT NOW()
@@ -206,3 +208,15 @@ CREATE INDEX idx_nest_loans_user ON nest.loans(user_id);
 CREATE INDEX idx_nest_loan_repayments_loan ON nest.loan_repayments(loan_id);
 
 CREATE TRIGGER trg_loans_updated_at BEFORE UPDATE ON nest.loans FOR EACH ROW EXECUTE FUNCTION nest.set_updated_at();
+
+-- ─────────────────────────────────────────────────────────────
+-- MIGRATIONS — safe to re-run on an existing database (Neon SQL editor)
+-- ─────────────────────────────────────────────────────────────
+
+-- Account source on transactions: 'everyday' | 'savings' | 'credit_card'
+ALTER TABLE nest.transactions
+  ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'everyday';
+
+-- Flag AI-detected bills so they can be distinguished from manual ones
+ALTER TABLE nest.bills
+  ADD COLUMN IF NOT EXISTS detected BOOLEAN DEFAULT FALSE;

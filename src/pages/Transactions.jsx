@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { Plus, Upload, Pencil, Trash2, X, ChevronDown } from 'lucide-react'
 import { api } from '../utils/api'
 import { formatCurrency, formatDate } from '../utils/formatters'
-import { CATEGORIES, CATEGORY_ICONS } from '../utils/categories'
+import { CATEGORIES, CATEGORY_ICONS, SOURCES, SOURCE_LABELS, SOURCE_ICONS } from '../utils/categories'
 import { parseAnzCsv } from '../utils/anzParser'
 import toast from 'react-hot-toast'
 
@@ -18,10 +18,13 @@ export default function Transactions() {
   const [showImport, setShowImport] = useState(false)
   const [editTx, setEditTx] = useState(null)
   const [form, setForm] = useState(EMPTY_FORM)
-  const [filters, setFilters] = useState({ search: '', category: '', type: '' })
+  const [filters, setFilters] = useState({ search: '', category: '', type: '', source: '' })
   const [saving, setSaving] = useState(false)
   const [parsedRows, setParsedRows] = useState(null)
   const [importing, setImporting] = useState(false)
+  const [accountType, setAccountType] = useState('everyday')
+  const [bank, setBank] = useState('anz')
+  const [parsing, setParsing] = useState(false)
   const catTimer = useRef(null)
 
   useEffect(() => { loadTransactions() }, [filters])
@@ -33,6 +36,7 @@ export default function Transactions() {
       if (filters.search) params.search = filters.search
       if (filters.category) params.category = filters.category
       if (filters.type) params.type = filters.type
+      if (filters.source) params.source = filters.source
       const { transactions } = await api.get('/transactions', params)
       setTransactions(transactions)
     } catch (err) { toast.error(err.message) }
@@ -90,13 +94,33 @@ export default function Transactions() {
     const file = e.target.files[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const rows = parseAnzCsv(ev.target.result)
-        if (!rows.length) return toast.error('No transactions found in file')
-        setParsedRows(rows)
-      } catch (err) {
-        toast.error('Failed to parse CSV: ' + err.message)
+    reader.onload = async (ev) => {
+      const text = ev.target.result
+      if (bank === 'anz') {
+        try {
+          const rows = parseAnzCsv(text).map(r => ({ ...r, source: accountType }))
+          if (!rows.length) return toast.error('No transactions found in file')
+          setParsedRows(rows)
+        } catch (err) {
+          toast.error('Failed to parse CSV: ' + err.message)
+        }
+      } else {
+        // AI universal parser for any other bank / credit card
+        setParsing(true)
+        try {
+          const { transactions } = await api.post('/ai/import', { csv: text, accountType })
+          if (!transactions?.length) return toast.error('AI could not find any transactions in this file')
+          setParsedRows(transactions.map(r => ({
+            ...r,
+            amount: parseFloat(r.amount).toFixed(2),
+            source: accountType,
+            selected: true
+          })))
+        } catch (err) {
+          toast.error('AI parse failed: ' + err.message)
+        } finally {
+          setParsing(false)
+        }
       }
     }
     reader.readAsText(file)
@@ -148,7 +172,7 @@ export default function Transactions() {
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button className="btn btn-secondary btn-sm" onClick={() => { setParsedRows(null); setShowImport(true) }}>
-            <Upload size={15} /> Import ANZ CSV
+            <Upload size={15} /> Import Statement
           </button>
           <button className="btn btn-primary btn-sm" onClick={openAdd}>
             <Plus size={15} /> Add
@@ -168,6 +192,10 @@ export default function Transactions() {
           <option value="income">Income</option>
           <option value="expense">Expense</option>
         </select>
+        <select value={filters.source} onChange={e => setFilters(f => ({ ...f, source: e.target.value }))}>
+          <option value="">All accounts</option>
+          {SOURCES.map(s => <option key={s} value={s}>{SOURCE_ICONS[s]} {SOURCE_LABELS[s]}</option>)}
+        </select>
       </div>
 
       <div className="card" style={{ padding: 0 }}>
@@ -178,6 +206,7 @@ export default function Transactions() {
                 <th>Date</th>
                 <th>Description</th>
                 <th>Category</th>
+                <th>Account</th>
                 <th>Type</th>
                 <th style={{ textAlign: 'right' }}>Amount</th>
                 <th></th>
@@ -185,9 +214,9 @@ export default function Transactions() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>Loading…</td></tr>
+                <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>Loading…</td></tr>
               ) : transactions.length === 0 ? (
-                <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                <tr><td colSpan={7} style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>
                   No transactions yet — add your first one above 💸
                 </td></tr>
               ) : transactions.map(t => (
@@ -198,6 +227,7 @@ export default function Transactions() {
                     {t.notes && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t.notes}</div>}
                   </td>
                   <td><span className="badge badge-category">{CATEGORY_ICONS[t.category]} {t.category.replace('_', ' ')}</span></td>
+                  <td style={{ whiteSpace: 'nowrap', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{SOURCE_ICONS[t.source] || '🏦'} {SOURCE_LABELS[t.source] || 'Everyday'}</td>
                   <td><span className={`badge badge-${t.type}`}>{t.type}</span></td>
                   <td style={{ textAlign: 'right' }}>
                     <span className={t.type === 'income' ? 'amount-income' : 'amount-expense'}>
@@ -272,8 +302,8 @@ export default function Transactions() {
 
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <h3 style={{ margin: 0 }}>Import ANZ Bank Statement</h3>
-              {!importing && (
+              <h3 style={{ margin: 0 }}>Import Statement</h3>
+              {!importing && !parsing && (
                 <button className="btn btn-ghost btn-icon" onClick={() => { setShowImport(false); setParsedRows(null) }}>
                   <X size={18} />
                 </button>
@@ -282,18 +312,48 @@ export default function Transactions() {
 
             {/* Upload phase */}
             {!parsedRows ? (
-              <div style={{ textAlign: 'center', padding: '32px 0' }}>
-                <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>📄</div>
-                <p style={{ color: 'var(--text-secondary)', marginBottom: 8, fontSize: '0.9rem' }}>
-                  Upload your ANZ bank statement CSV export.
-                </p>
-                <p style={{ color: 'var(--text-muted)', marginBottom: 24, fontSize: '0.8rem' }}>
-                  Descriptions are cleaned automatically and transactions are categorised based on merchant patterns.
-                </p>
-                <label className="btn btn-primary" style={{ cursor: 'pointer', display: 'inline-flex' }}>
-                  <Upload size={15} /> Choose CSV file
-                  <input type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={handleCsvFile} />
-                </label>
+              <div style={{ padding: '8px 0' }}>
+                <div className="form-row" style={{ marginBottom: 16 }}>
+                  <div className="form-group">
+                    <label>Account type</label>
+                    <select value={accountType} onChange={e => setAccountType(e.target.value)} disabled={parsing}>
+                      {SOURCES.map(s => <option key={s} value={s}>{SOURCE_ICONS[s]} {SOURCE_LABELS[s]}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Statement format</label>
+                    <select value={bank} onChange={e => setBank(e.target.value)} disabled={parsing}>
+                      <option value="anz">ANZ CSV (instant)</option>
+                      <option value="other">Other bank / card (AI parse)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                  {parsing ? (
+                    <>
+                      <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>🤖</div>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>AI is reading your statement…</p>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>This can take 10–20 seconds.</p>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: '2.5rem', marginBottom: 12 }}>📄</div>
+                      <p style={{ color: 'var(--text-secondary)', marginBottom: 8, fontSize: '0.9rem' }}>
+                        Upload your statement CSV for <strong style={{ color: 'var(--gold-light)' }}>{SOURCE_LABELS[accountType]}</strong>.
+                      </p>
+                      <p style={{ color: 'var(--text-muted)', marginBottom: 24, fontSize: '0.8rem' }}>
+                        {bank === 'anz'
+                          ? 'Descriptions are cleaned and categorised from merchant patterns.'
+                          : 'AI parses any CSV layout and handles credit-card sign conventions.'}
+                      </p>
+                      <label className="btn btn-primary" style={{ cursor: 'pointer', display: 'inline-flex' }}>
+                        <Upload size={15} /> Choose CSV file
+                        <input type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={handleCsvFile} />
+                      </label>
+                    </>
+                  )}
+                </div>
               </div>
             ) : (
               <>

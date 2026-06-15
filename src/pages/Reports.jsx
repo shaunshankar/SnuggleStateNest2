@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { BarChart3 } from 'lucide-react'
+import { BarChart3, Sparkles } from 'lucide-react'
 import { api } from '../utils/api'
 import { formatCurrency } from '../utils/formatters'
 import { CATEGORY_COLOURS, CATEGORY_ICONS } from '../utils/categories'
+import InsightText from '../components/InsightText'
 
 function BarChart({ data, valueKey, labelKey, colour = 'var(--gold)' }) {
   const max = Math.max(...data.map(d => d[valueKey]), 1)
@@ -25,6 +26,8 @@ function BarChart({ data, valueKey, labelKey, colour = 'var(--gold)' }) {
 export default function Reports() {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [analysis, setAnalysis] = useState('')
+  const [analysisLoading, setAnalysisLoading] = useState(false)
 
   useEffect(() => {
     api.get('/reports')
@@ -32,6 +35,22 @@ export default function Reports() {
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
+
+  async function handleAnalyse() {
+    setAnalysisLoading(true)
+    try {
+      const payload = {
+        categoryBreakdown: data.categoryBreakdown,
+        monthlyTrends: data.monthlyTrends,
+        topMerchants: data.topMerchants,
+        currentMonth: data.currentMonth,
+        savingsRate: data.savingsRate
+      }
+      const { insights } = await api.post('/ai/insights', { mode: 'spending', payload })
+      setAnalysis(insights)
+    } catch (err) { console.error(err) }
+    finally { setAnalysisLoading(false) }
+  }
 
   if (loading) return (
     <div>
@@ -78,6 +97,19 @@ export default function Reports() {
           <div className="stat-value gold">{data.savingsRate}%</div>
           <div className="stat-sub">of income saved</div>
         </div>
+      </div>
+
+      {/* AI spending analysis */}
+      <div className="card" style={{ marginBottom: 20, borderColor: 'var(--gold-border)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: analysis ? 12 : 0 }}>
+          <h3 style={{ fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={17} color="var(--gold)" /> AI spending analysis</h3>
+          <button className="btn btn-secondary btn-sm" onClick={handleAnalyse} disabled={analysisLoading}>
+            {analysisLoading ? 'Analysing…' : analysis ? 'Refresh' : 'Find ways to save'}
+          </button>
+        </div>
+        {analysis
+          ? <InsightText text={analysis} />
+          : !analysisLoading && <p style={{ color: 'var(--text-muted)', fontSize: '0.84rem', marginTop: 8 }}>Get a personalised breakdown of where you can lower costs.</p>}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>

@@ -1,17 +1,20 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowUpRight, ArrowDownRight, TrendingUp, Receipt, ArrowRight } from 'lucide-react'
+import { ArrowUpRight, ArrowDownRight, TrendingUp, Receipt, ArrowRight, Sparkles, PiggyBank, Store } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { api } from '../utils/api'
 import { formatCurrency, formatDate, formatDateShort, getGreeting, daysUntil, ordinal } from '../utils/formatters'
-import { CATEGORY_ICONS } from '../utils/categories'
+import { CATEGORY_ICONS, SOURCE_LABELS, SOURCE_ICONS } from '../utils/categories'
 import ProgressBar from '../components/ProgressBar'
 import ProgressRing from '../components/ProgressRing'
+import InsightText from '../components/InsightText'
 
 export default function Dashboard() {
   const { user } = useAuth()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [snapshot, setSnapshot] = useState('')
+  const [snapshotLoading, setSnapshotLoading] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -20,16 +23,18 @@ export default function Dashboard() {
         const start = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
         const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
 
-        const [txRes, budgetRes, billsRes, savingsRes] = await Promise.all([
+        const [txRes, budgetRes, billsRes, savingsRes, reportsRes] = await Promise.all([
           api.get('/transactions', { from: start, to: end, limit: 5 }),
           api.get('/budgets'),
           api.get('/bills'),
-          api.get('/savings')
+          api.get('/savings'),
+          api.get('/reports')
         ])
 
         const txns = txRes.transactions
-        const income = txns.filter(t => t.type === 'income').reduce((s, t) => s + parseFloat(t.amount), 0)
-        const expenses = txns.filter(t => t.type === 'expense').reduce((s, t) => s + parseFloat(t.amount), 0)
+        // Month income/expenses come from reports (full month, not just the 5 recent txns)
+        const income = reportsRes.currentMonth?.income ?? 0
+        const expenses = reportsRes.currentMonth?.expenses ?? 0
 
         const upcomingBills = billsRes.bills
           .filter(b => !b.is_paid)
@@ -37,12 +42,22 @@ export default function Dashboard() {
           .filter(b => b.daysUntil <= 7)
           .sort((a, b) => a.daysUntil - b.daysUntil)
 
+        // Account breakdown: expense totals per source this month
+        const accountSpend = {}
+        ;(reportsRes.accountBreakdown || []).forEach(r => {
+          if (r.type === 'expense') accountSpend[r.source] = (accountSpend[r.source] || 0) + parseFloat(r.total)
+        })
+
         setData({
           income, expenses, net: income - expenses,
           transactions: txns,
           budgets: budgetRes.budgets.slice(0, 5),
           upcomingBills,
-          goals: savingsRes.goals.slice(0, 3)
+          goals: savingsRes.goals.slice(0, 3),
+          accountSpend,
+          topMerchants: reportsRes.topMerchants || [],
+          savingsThisMonth: reportsRes.savingsThisMonth || 0,
+          savingsRate: reportsRes.savingsRate || 0
         })
       } catch (err) {
         console.error(err)
@@ -52,6 +67,22 @@ export default function Dashboard() {
     }
     load()
   }, [])
+
+  async function handleSnapshot() {
+    setSnapshotLoading(true)
+    try {
+      const payload = {
+        income: data.income, expenses: data.expenses, net: data.net,
+        savingsThisMonth: data.savingsThisMonth, savingsRate: data.savingsRate,
+        accountSpend: data.accountSpend,
+        topMerchants: data.topMerchants?.map(m => ({ name: m.description, total: parseFloat(m.total) })),
+        upcomingBills: data.upcomingBills?.map(b => ({ name: b.name, amount: parseFloat(b.amount) }))
+      }
+      const { insights } = await api.post('/ai/insights', { mode: 'dashboard', payload })
+      setSnapshot(insights)
+    } catch (err) { console.error(err) }
+    finally { setSnapshotLoading(false) }
+  }
 
   if (loading) return (
     <div>
@@ -69,6 +100,19 @@ export default function Dashboard() {
       <div className="greeting">
         <h2>{getGreeting()}, <span>{firstName}</span></h2>
         <p>Here's your household financial snapshot</p>
+      </div>
+
+      {/* AI financial snapshot */}
+      <div className="card" style={{ marginBottom: 20, borderColor: 'var(--gold-border)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: snapshot ? 12 : 0 }}>
+          <h3 style={{ fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={17} color="var(--gold)" /> AI snapshot</h3>
+          <button className="btn btn-secondary btn-sm" onClick={handleSnapshot} disabled={snapshotLoading}>
+            {snapshotLoading ? 'Thinking…' : snapshot ? 'Refresh' : 'Generate'}
+          </button>
+        </div>
+        {snapshot
+          ? <InsightText text={snapshot} />
+          : !snapshotLoading && <p style={{ color: 'var(--text-muted)', fontSize: '0.84rem', marginTop: 8 }}>Get a quick AI read on how your household is tracking this month.</p>}
       </div>
 
       {/* Summary stats */}
@@ -91,7 +135,14 @@ export default function Dashboard() {
           <div className="stat-label">Net savings</div>
           <div className={`stat-value ${data.net >= 0 ? 'positive' : 'negative'}`}>{formatCurrency(data.net)}</div>
           <div className="stat-sub" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <TrendingUp size={14} color="var(--gold)" /> This month
+            <TrendingUp size={14} color="var(--gold)" /> {data.savingsRate}% savings rate
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-label">Moved to savings</div>
+          <div className="stat-value gold">{formatCurrency(data.savingsThisMonth)}</div>
+          <div className="stat-sub" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <PiggyBank size={14} color="var(--gold)" /> This month
           </div>
         </div>
       </div>
@@ -168,6 +219,54 @@ export default function Dashboard() {
               </div>
             )
           })}
+        </div>
+
+        {/* Account breakdown */}
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h3 style={{ fontSize: '1rem' }}>Spending by Account</h3>
+            <Link to="/transactions" style={{ color: 'var(--gold)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+              View all <ArrowRight size={14} />
+            </Link>
+          </div>
+          {Object.keys(data.accountSpend).length === 0 ? (
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No spending recorded this month yet.</p>
+          ) : (() => {
+            const total = Object.values(data.accountSpend).reduce((s, v) => s + v, 0) || 1
+            return Object.entries(data.accountSpend).sort((a, b) => b[1] - a[1]).map(([src, amt]) => (
+              <div key={src} style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: '0.82rem' }}>
+                  <span>{SOURCE_ICONS[src] || '🏦'} {SOURCE_LABELS[src] || src}</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>{formatCurrency(amt)}</span>
+                </div>
+                <ProgressBar value={amt} max={total} />
+              </div>
+            ))
+          })()}
+        </div>
+
+        {/* Top merchants */}
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h3 style={{ fontSize: '1rem' }}>Top Merchants</h3>
+            <Link to="/reports" style={{ color: 'var(--gold)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+              Reports <ArrowRight size={14} />
+            </Link>
+          </div>
+          {data.topMerchants.length === 0 ? (
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>No spending recorded this month yet.</p>
+          ) : data.topMerchants.map((m, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+              <div style={{ width: 32, height: 32, background: 'var(--gold-dim)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Store size={15} color="var(--gold)" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.description}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>{m.count} transaction{parseInt(m.count) !== 1 ? 's' : ''}</div>
+              </div>
+              <div className="amount-expense" style={{ fontSize: '0.92rem', whiteSpace: 'nowrap' }}>{formatCurrency(m.total)}</div>
+            </div>
+          ))}
         </div>
 
         {/* Recent transactions */}

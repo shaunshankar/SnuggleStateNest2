@@ -67,6 +67,28 @@ module.exports = async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
+    // Batch insert (AI-detected bills) with dedup by name
+    if (Array.isArray(req.body?.bills)) {
+      let imported = 0, skipped = 0
+      try {
+        for (const b of req.body.bills) {
+          if (!b.name || !b.amount || !b.due_day || !b.frequency || !b.category) { skipped++; continue }
+          const dup = await pool.query(
+            'SELECT id FROM nest.bills WHERE household_id=$1 AND LOWER(name)=LOWER($2)',
+            [auth.householdId, b.name]
+          )
+          if (dup.rows.length) { skipped++; continue }
+          await pool.query(
+            `INSERT INTO nest.bills (household_id, name, amount, due_day, frequency, category, detected, created_by)
+             VALUES ($1,$2,$3,$4,$5,$6,true,$7)`,
+            [auth.householdId, b.name, b.amount, b.due_day, b.frequency, b.category, auth.userId]
+          )
+          imported++
+        }
+        return res.json({ imported, skipped })
+      } catch (err) { console.error(err); return res.status(500).json({ message: 'Server error' }) }
+    }
+
     const { name, amount, due_day, frequency, category } = req.body || {}
     if (!name || !amount || !due_day || !frequency || !category)
       return res.status(400).json({ message: 'All fields required' })

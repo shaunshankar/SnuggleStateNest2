@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { Plus, Pencil, Trash2, TrendingUp } from 'lucide-react'
+import { Plus, Pencil, Trash2, TrendingUp, Sparkles } from 'lucide-react'
 import { api } from '../utils/api'
 import { formatCurrency } from '../utils/formatters'
 import { CATEGORIES, CATEGORY_ICONS, CATEGORY_COLOURS } from '../utils/categories'
 import ProgressBar from '../components/ProgressBar'
+import InsightText from '../components/InsightText'
 import toast from 'react-hot-toast'
 
 export default function Budgets() {
@@ -13,6 +14,18 @@ export default function Budgets() {
   const [editBudget, setEditBudget] = useState(null)
   const [form, setForm] = useState({ category: 'groceries', monthly_limit: '' })
   const [saving, setSaving] = useState(false)
+  const [insights, setInsights] = useState('')
+  const [insightsLoading, setInsightsLoading] = useState(false)
+
+  async function handleInsights() {
+    setInsightsLoading(true)
+    try {
+      const payload = budgets.map(b => ({ category: b.category, monthly_limit: parseFloat(b.monthly_limit), spent: b.spent || 0 }))
+      const { insights } = await api.post('/ai/insights', { mode: 'budget', payload })
+      setInsights(insights)
+    } catch (err) { toast.error(err.message) }
+    finally { setInsightsLoading(false) }
+  }
 
   const now = new Date()
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
@@ -91,6 +104,18 @@ export default function Budgets() {
           <div className="stat-sub">{daysLeft} days to go</div>
         </div>
       </div>
+
+      {!loading && budgets.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderColor: 'var(--gold-border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: insights ? 12 : 0 }}>
+            <h3 style={{ fontSize: '1rem', display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={17} color="var(--gold)" /> AI budget insights</h3>
+            <button className="btn btn-secondary btn-sm" onClick={handleInsights} disabled={insightsLoading}>
+              {insightsLoading ? 'Thinking…' : insights ? 'Refresh' : 'Generate'}
+            </button>
+          </div>
+          {insights && <InsightText text={insights} />}
+        </div>
+      )}
 
       {loading ? (
         <div>{[1,2,3].map(i => <div key={i} className="skeleton skeleton-card" style={{ height: 80, marginBottom: 12 }} />)}</div>

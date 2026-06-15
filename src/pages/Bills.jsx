@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Pencil, Trash2, CheckCircle, Receipt } from 'lucide-react'
+import { Plus, Pencil, Trash2, CheckCircle, Receipt, Sparkles, X } from 'lucide-react'
 import { api } from '../utils/api'
 import { formatCurrency, daysUntil, ordinal } from '../utils/formatters'
 import { CATEGORIES, CATEGORY_ICONS } from '../utils/categories'
@@ -14,8 +14,48 @@ export default function Bills() {
   const [editBill, setEditBill] = useState(null)
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
+  const [detecting, setDetecting] = useState(false)
+  const [detected, setDetected] = useState(null)
+  const [addingDetected, setAddingDetected] = useState(false)
 
   useEffect(() => { loadBills() }, [])
+
+  async function handleDetect() {
+    setDetecting(true)
+    try {
+      const { transactions } = await api.get('/transactions', { limit: 500 })
+      if (!transactions?.length) { toast.error('No transactions to analyse yet — import a statement first'); return }
+      const { bills } = await api.post('/ai/detect', { transactions })
+      if (!bills?.length) { toast('No recurring bills found in your transactions', { icon: '🔍' }); return }
+      setDetected(bills.map(b => ({
+        name: b.name || '',
+        amount: parseFloat(b.amount || 0).toFixed(2),
+        due_day: Math.min(31, Math.max(1, parseInt(b.due_day) || 1)),
+        frequency: ['monthly', 'weekly', 'fortnightly', 'yearly'].includes(b.frequency) ? b.frequency : 'monthly',
+        category: CATEGORIES.includes(b.category) ? b.category : 'other',
+        confidence: b.confidence || 'medium',
+        selected: true
+      })))
+    } catch (err) { toast.error(err.message) }
+    finally { setDetecting(false) }
+  }
+
+  function updateDetected(idx, field, value) {
+    setDetected(rows => rows.map((r, i) => i === idx ? { ...r, [field]: value } : r))
+  }
+
+  async function handleAddDetected() {
+    const selected = detected.filter(r => r.selected)
+    if (!selected.length) return toast.error('No bills selected')
+    setAddingDetected(true)
+    try {
+      const { imported, skipped } = await api.post('/bills', { bills: selected })
+      toast.success(skipped > 0 ? `Added ${imported} bills, skipped ${skipped} already-existing` : `Added ${imported} bills`)
+      setDetected(null)
+      loadBills()
+    } catch (err) { toast.error(err.message) }
+    finally { setAddingDetected(false) }
+  }
 
   async function loadBills() {
     setLoading(true)
@@ -86,9 +126,14 @@ export default function Bills() {
           <h2>Bills & Subscriptions</h2>
           <p>Monthly total: {formatCurrency(totalMonthly)}</p>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={openAdd}>
-          <Plus size={15} /> Add Bill
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn-secondary btn-sm" onClick={handleDetect} disabled={detecting}>
+            <Sparkles size={15} /> {detecting ? 'Analysing…' : 'Detect bills (AI)'}
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={openAdd}>
+            <Plus size={15} /> Add Bill
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -191,6 +236,74 @@ export default function Bills() {
           </div>
         </div>
       )}
+
+      {/* AI-detected bills review modal */}
+      {detected && (
+        <div className="modal-overlay" onClick={() => { if (!addingDetected) setDetected(null) }}>
+          <div className="modal modal-wide" style={{ maxWidth: 760 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Sparkles size={18} color="var(--gold)" /> Detected recurring bills</h3>
+              {!addingDetected && <button className="btn btn-ghost btn-icon" onClick={() => setDetected(null)}><X size={18} /></button>}
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', marginBottom: 16 }}>
+              Review and tick the ones to add. Amounts and days are estimates — edit anything before adding. Bills that already exist are skipped automatically.
+            </p>
+
+            <div style={{ maxHeight: 420, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 1 }}>
+                  <tr>
+                    {['', 'Name', 'Amount', 'Day', 'Frequency', 'Category', ''].map((h, i) => (
+                      <th key={i} style={{ padding: '10px 10px', textAlign: 'left', fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {detected.map((b, i) => (
+                    <tr key={i} style={{ opacity: b.selected ? 1 : 0.4 }}>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <input type="checkbox" checked={b.selected} onChange={e => updateDetected(i, 'selected', e.target.checked)} style={{ width: 14, height: 14, cursor: 'pointer' }} />
+                      </td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <input value={b.name} onChange={e => updateDetected(i, 'name', e.target.value)} style={inputStyle} />
+                      </td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <input type="number" step="0.01" value={b.amount} onChange={e => updateDetected(i, 'amount', e.target.value)} style={{ ...inputStyle, width: 84 }} />
+                      </td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <input type="number" min="1" max="31" value={b.due_day} onChange={e => updateDetected(i, 'due_day', e.target.value)} style={{ ...inputStyle, width: 56 }} />
+                      </td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <select value={b.frequency} onChange={e => updateDetected(i, 'frequency', e.target.value)} style={inputStyle}>
+                          {['monthly', 'weekly', 'fortnightly', 'yearly'].map(f => <option key={f} value={f}>{f}</option>)}
+                        </select>
+                      </td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <select value={b.category} onChange={e => updateDetected(i, 'category', e.target.value)} style={inputStyle}>
+                          {CATEGORIES.filter(c => c !== 'income').map(c => <option key={c} value={c}>{CATEGORY_ICONS[c]} {c.replace('_', ' ')}</option>)}
+                        </select>
+                      </td>
+                      <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>{b.confidence}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="modal-actions" style={{ marginTop: 16 }}>
+              <button className="btn btn-ghost" onClick={() => setDetected(null)} disabled={addingDetected}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleAddDetected} disabled={addingDetected || detected.filter(b => b.selected).length === 0}>
+                {addingDetected ? 'Adding…' : `Add ${detected.filter(b => b.selected).length} selected`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
+}
+
+const inputStyle = {
+  background: 'var(--bg-input)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6,
+  color: 'var(--text-primary)', padding: '4px 8px', fontSize: '0.8rem', width: '100%'
 }
