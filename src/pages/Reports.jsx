@@ -4,6 +4,7 @@ import { api } from '../utils/api'
 import { formatCurrency } from '../utils/formatters'
 import { CATEGORY_COLOURS, CATEGORY_ICONS } from '../utils/categories'
 import InsightText from '../components/InsightText'
+import toast from 'react-hot-toast'
 
 function BarChart({ data, valueKey, labelKey, colour = 'var(--gold)' }) {
   const max = Math.max(...data.map(d => d[valueKey]), 1)
@@ -48,7 +49,7 @@ export default function Reports() {
       }
       const { insights } = await api.post('/ai/insights', { mode: 'spending', payload })
       setAnalysis(insights)
-    } catch (err) { console.error(err) }
+    } catch (err) { console.error(err); toast.error(err.message || 'Could not generate analysis') }
     finally { setAnalysisLoading(false) }
   }
 

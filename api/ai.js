@@ -5,12 +5,19 @@ require('dotenv').config()
 const CATEGORIES = 'housing, groceries, transport, utilities, entertainment, dining, health, personal_care, education, savings, income, other'
 
 async function callClaude({ model, max_tokens, prompt }) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY is not configured on the server')
+  }
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({ model, max_tokens, messages: [{ role: 'user', content: prompt }] })
   })
   const data = await response.json()
+  if (!response.ok) {
+    const detail = data?.error?.message || `Anthropic API error (${response.status})`
+    throw new Error(detail)
+  }
   return data.content?.[0]?.text?.trim() || ''
 }
 
@@ -56,7 +63,7 @@ module.exports = async function handler(req, res) {
         prompt: `Parse this bank statement CSV into a JSON array. The columns may be in any order and there may be a header row.\nFor each transaction row extract:\n- date (YYYY-MM-DD)\n- description (merchant/payee name, cleaned up and human readable)\n- amount (positive number, no currency symbols)\n- type: "income" or "expense"\n- category: one of [${CATEGORIES}]\n\n${signRule}\n\nReturn ONLY a JSON array, no other text.\n\nCSV data:\n${csv}`
       })
       return res.json({ transactions: extractJson(text, 'array') })
-    } catch (err) { console.error(err); return res.status(500).json({ message: 'Failed to parse statement' }) }
+    } catch (err) { console.error(err); return res.status(500).json({ message: err.message || 'Failed to parse statement' }) }
   }
 
   // ── Detect recurring bills + savings movements ──────────────────
@@ -75,7 +82,7 @@ module.exports = async function handler(req, res) {
       })
       const parsed = extractJson(text, 'object')
       return res.json({ bills: parsed.bills || [], savings: parsed.savings || [] })
-    } catch (err) { console.error(err); return res.status(500).json({ message: 'Failed to analyse transactions' }) }
+    } catch (err) { console.error(err); return res.status(500).json({ message: err.message || 'Failed to analyse transactions' }) }
   }
 
   // ── Financial insights (spending / budget / dashboard) ──────────
@@ -100,7 +107,7 @@ module.exports = async function handler(req, res) {
     try {
       const text = await callClaude({ model, max_tokens, prompt })
       return res.json({ insights: text || 'Unable to generate insights right now.' })
-    } catch (err) { console.error(err); return res.status(500).json({ message: 'Failed to generate insights' }) }
+    } catch (err) { console.error(err); return res.status(500).json({ message: err.message || 'Failed to generate insights' }) }
   }
 
   res.status(404).json({ message: 'Not found' })

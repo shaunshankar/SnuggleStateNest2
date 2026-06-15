@@ -8,6 +8,7 @@ import { CATEGORY_ICONS, SOURCE_LABELS, SOURCE_ICONS } from '../utils/categories
 import ProgressBar from '../components/ProgressBar'
 import ProgressRing from '../components/ProgressRing'
 import InsightText from '../components/InsightText'
+import toast from 'react-hot-toast'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -80,7 +81,7 @@ export default function Dashboard() {
       }
       const { insights } = await api.post('/ai/insights', { mode: 'dashboard', payload })
       setSnapshot(insights)
-    } catch (err) { console.error(err) }
+    } catch (err) { console.error(err); toast.error(err.message || 'Could not generate snapshot') }
     finally { setSnapshotLoading(false) }
   }
 
