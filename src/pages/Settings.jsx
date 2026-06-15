@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 export default function Settings() {
   const { user, refreshUser, signOut } = useAuth()
   const navigate = useNavigate()
-  const [profile, setProfile] = useState({ name: user?.name || '', monthly_income: user?.monthly_income || '', email_notifications: user?.email_notifications ?? true })
+  const [profile, setProfile] = useState({ name: user?.name || '', monthly_income: user?.monthly_income || '', email_notifications: user?.email_notifications ?? true, budget_cycle_start_day: user?.budget_cycle_start_day || 1 })
   const [passwords, setPasswords] = useState({ current: '', next: '', confirm: '' })
   const [saving, setSaving] = useState(false)
   const [savingPw, setSavingPw] = useState(false)
@@ -16,7 +16,7 @@ export default function Settings() {
     e.preventDefault()
     setSaving(true)
     try {
-      await api.put('/users', { name: profile.name, monthly_income: profile.monthly_income, email_notifications: profile.email_notifications })
+      await api.put('/users', { name: profile.name, monthly_income: profile.monthly_income, email_notifications: profile.email_notifications, budget_cycle_start_day: profile.budget_cycle_start_day })
       await refreshUser()
       toast.success('Settings saved')
     } catch (err) { toast.error(err.message) }
@@ -73,6 +73,13 @@ export default function Settings() {
           <div className="form-group">
             <label>Monthly income ($)</label>
             <input type="number" step="0.01" min="0" value={profile.monthly_income} onChange={e => setProfile(p => ({ ...p, monthly_income: e.target.value }))} placeholder="0.00" />
+          </div>
+          <div className="form-group">
+            <label>Budget cycle start day</label>
+            <input type="number" min="1" max="28" value={profile.budget_cycle_start_day} onChange={e => setProfile(p => ({ ...p, budget_cycle_start_day: e.target.value }))} />
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 4, display: 'block' }}>
+              Day of the month your tracking period starts (e.g. 15 if you're paid on the 15th). Use 1 for calendar months.
+            </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <input type="checkbox" id="email_notif" checked={profile.email_notifications} onChange={e => setProfile(p => ({ ...p, email_notifications: e.target.checked }))} style={{ width: 16, height: 16 }} />

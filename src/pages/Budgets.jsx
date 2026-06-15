@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Pencil, Trash2, TrendingUp, Sparkles, Wand2, X } from 'lucide-react'
 import { api } from '../utils/api'
 import { useAuth } from '../hooks/useAuth'
-import { formatCurrency } from '../utils/formatters'
+import { formatCurrency, cycleWindow, cycleLabel } from '../utils/formatters'
 import { CATEGORIES, CATEGORY_ICONS, CATEGORY_COLOURS } from '../utils/categories'
 import ProgressBar from '../components/ProgressBar'
 import InsightText from '../components/InsightText'
@@ -92,10 +92,9 @@ export default function Budgets() {
     finally { setApplying(false) }
   }
 
-  const now = new Date()
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
-  const daysPassed = now.getDate()
-  const daysLeft = daysInMonth - daysPassed
+  const cycleStartDay = user?.budget_cycle_start_day || 1
+  const { daysTotal: daysInMonth, daysPassed, daysLeft } = cycleWindow(cycleStartDay)
+  const periodLabel = cycleLabel(cycleStartDay)
 
   useEffect(() => { loadBudgets() }, [])
 
@@ -144,7 +143,7 @@ export default function Budgets() {
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <h2>Budget Manager</h2>
-          <p>{daysLeft} days left in {now.toLocaleString('en-AU', { month: 'long' })}</p>
+          <p>{daysLeft} days left in this cycle ({periodLabel})</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button className="btn btn-secondary btn-sm" onClick={openAssistant}>

@@ -12,7 +12,7 @@ module.exports = async function handler(req, res) {
   if (req.method === 'GET') {
     try {
       const { rows } = await pool.query(
-        'SELECT id, email, name, household_id, role, monthly_income, email_notifications FROM nest.users WHERE id=$1',
+        'SELECT id, email, name, household_id, role, monthly_income, email_notifications, budget_cycle_start_day FROM nest.users WHERE id=$1',
         [auth.userId]
       )
       if (!rows.length) return res.status(404).json({ message: 'Not found' })
@@ -21,7 +21,8 @@ module.exports = async function handler(req, res) {
   }
 
   if (req.method === 'PUT') {
-    const { name, monthly_income, email_notifications, current_password, new_password } = req.body || {}
+    const { name, monthly_income, email_notifications, budget_cycle_start_day, current_password, new_password } = req.body || {}
+    const cycleDay = budget_cycle_start_day == null ? null : Math.min(Math.max(parseInt(budget_cycle_start_day, 10) || 1, 1), 28)
     try {
       if (new_password) {
         if (!current_password) return res.status(400).json({ message: 'Current password required' })
@@ -35,10 +36,11 @@ module.exports = async function handler(req, res) {
         `UPDATE nest.users
          SET name=COALESCE($1, name),
              monthly_income=COALESCE($2, monthly_income),
-             email_notifications=COALESCE($3, email_notifications)
-         WHERE id=$4
-         RETURNING id, email, name, household_id, role, monthly_income, email_notifications`,
-        [name || null, monthly_income ?? null, email_notifications ?? null, auth.userId]
+             email_notifications=COALESCE($3, email_notifications),
+             budget_cycle_start_day=COALESCE($4, budget_cycle_start_day)
+         WHERE id=$5
+         RETURNING id, email, name, household_id, role, monthly_income, email_notifications, budget_cycle_start_day`,
+        [name || null, monthly_income ?? null, email_notifications ?? null, cycleDay, auth.userId]
       )
       return res.json({ user: rows[0] })
     } catch (err) { console.error(err); return res.status(500).json({ message: 'Server error' }) }

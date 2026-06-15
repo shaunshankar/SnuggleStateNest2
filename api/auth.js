@@ -22,7 +22,7 @@ module.exports = async function handler(req, res) {
       const { rows } = await pool.query(
         `INSERT INTO nest.users (email, name, password_hash)
          VALUES ($1,$2,$3)
-         RETURNING id, email, name, household_id, role, monthly_income, email_notifications`,
+         RETURNING id, email, name, household_id, role, monthly_income, email_notifications, budget_cycle_start_day`,
         [email.toLowerCase(), name.trim(), hash]
       )
       const user = rows[0]
@@ -37,7 +37,7 @@ module.exports = async function handler(req, res) {
     const pool = getPool()
     try {
       const { rows } = await pool.query(
-        `SELECT id, email, name, password_hash, household_id, role, monthly_income, email_notifications
+        `SELECT id, email, name, password_hash, household_id, role, monthly_income, email_notifications, budget_cycle_start_day
          FROM nest.users WHERE email=$1`,
         [email.toLowerCase()]
       )
@@ -57,7 +57,7 @@ module.exports = async function handler(req, res) {
     const pool = getPool()
     try {
       const { rows } = await pool.query(
-        'SELECT id, email, name, household_id, role, monthly_income, email_notifications FROM nest.users WHERE id=$1',
+        'SELECT id, email, name, household_id, role, monthly_income, email_notifications, budget_cycle_start_day FROM nest.users WHERE id=$1',
         [auth.userId]
       )
       if (!rows.length) return res.status(404).json({ message: 'User not found' })

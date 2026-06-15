@@ -20,12 +20,8 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       try {
-        const now = new Date()
-        const start = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-        const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
-
         const [txRes, budgetRes, billsRes, savingsRes, reportsRes] = await Promise.all([
-          api.get('/transactions', { from: start, to: end, limit: 5 }),
+          api.get('/transactions', { limit: 5 }),
           api.get('/budgets'),
           api.get('/bills'),
           api.get('/savings'),

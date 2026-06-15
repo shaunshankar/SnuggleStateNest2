@@ -32,6 +32,7 @@ CREATE TABLE nest.users (
   role                 TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'member')),
   monthly_income       NUMERIC(10,2) DEFAULT 0,
   email_notifications  BOOLEAN DEFAULT TRUE,
+  budget_cycle_start_day SMALLINT NOT NULL DEFAULT 1 CHECK (budget_cycle_start_day BETWEEN 1 AND 28),
   created_at           TIMESTAMPTZ DEFAULT NOW(),
   updated_at           TIMESTAMPTZ DEFAULT NOW()
 );
@@ -220,3 +221,7 @@ ALTER TABLE nest.transactions
 -- Flag AI-detected bills so they can be distinguished from manual ones
 ALTER TABLE nest.bills
   ADD COLUMN IF NOT EXISTS detected BOOLEAN DEFAULT FALSE;
+
+-- Budget/tracking cycle start day (1 = calendar month; e.g. 15 = payday cycle)
+ALTER TABLE nest.users
+  ADD COLUMN IF NOT EXISTS budget_cycle_start_day SMALLINT NOT NULL DEFAULT 1;

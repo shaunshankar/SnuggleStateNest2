@@ -44,3 +44,27 @@ export function ordinal(n) {
 export function initials(name) {
   return (name || '').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
 }
+
+// Current budget/tracking cycle window for a given start day.
+// startDay = 1 -> calendar month; 15 -> 15th to 14th next month.
+export function cycleWindow(startDay = 1, ref = new Date()) {
+  const d = Math.min(Math.max(parseInt(startDay, 10) || 1, 1), 28)
+  let y = ref.getFullYear(), m = ref.getMonth()
+  if (ref.getDate() < d) { m -= 1; if (m < 0) { m = 11; y -= 1 } }
+  const start = new Date(y, m, d)
+  const end = new Date(y, m + 1, d)            // next cycle start (exclusive)
+  const msDay = 86400000
+  const daysTotal = Math.round((end - start) / msDay)
+  const daysPassed = Math.min(daysTotal, Math.max(1, Math.floor((ref - start) / msDay) + 1))
+  const daysLeft = Math.max(0, daysTotal - daysPassed)
+  return { start, end, daysTotal, daysPassed, daysLeft }
+}
+
+// e.g. "15 Jun – 14 Jul"
+export function cycleLabel(startDay = 1, ref = new Date()) {
+  if ((parseInt(startDay, 10) || 1) === 1) return ref.toLocaleString('en-AU', { month: 'long' })
+  const { start, end } = cycleWindow(startDay, ref)
+  const last = new Date(end.getTime() - 86400000)
+  const opt = { day: 'numeric', month: 'short' }
+  return `${start.toLocaleDateString('en-AU', opt)} – ${last.toLocaleDateString('en-AU', opt)}`
+}

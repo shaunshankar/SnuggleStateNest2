@@ -1,6 +1,7 @@
 const { getPool } = require('./_db')
 const { requireAuth } = require('./_auth')
 const { handleCors } = require('./_cors')
+const { cycleWindow, getUserCycleStartDay } = require('./_period')
 
 module.exports = async function handler(req, res) {
   if (handleCors(req, res)) return
@@ -11,9 +12,9 @@ module.exports = async function handler(req, res) {
 
   if (req.method === 'GET') {
     try {
-      const now = new Date()
-      const start = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0]
+      const cycle = cycleWindow(await getUserCycleStartDay(pool, auth.userId))
+      const start = cycle.start
+      const end = cycle.endInclusive
       const [budgetsRes, spendRes] = await Promise.all([
         pool.query('SELECT * FROM nest.budgets WHERE household_id=$1 ORDER BY category', [auth.householdId]),
         pool.query(

@@ -1,6 +1,7 @@
 const { getPool } = require('./_db')
 const { requireAuth } = require('./_auth')
 const { handleCors } = require('./_cors')
+const { cycleWindow, getUserCycleStartDay } = require('./_period')
 
 module.exports = async function handler(req, res) {
   if (handleCors(req, res)) return
@@ -21,7 +22,7 @@ module.exports = async function handler(req, res) {
         end: new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().split('T')[0]
       })
     }
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+    const cycle = cycleWindow(await getUserCycleStartDay(pool, auth.userId))
     const [categoryRes, monthlyRes, summaryRes, accountRes, merchantRes] = await Promise.all([
       pool.query(
         `SELECT category, type, SUM(amount) AS total FROM nest.transactions
@@ -38,19 +39,19 @@ module.exports = async function handler(req, res) {
         `SELECT SUM(CASE WHEN type='income' THEN amount ELSE 0 END) AS income,
                 SUM(CASE WHEN type='expense' THEN amount ELSE 0 END) AS expenses,
                 SUM(CASE WHEN type='expense' AND category='savings' THEN amount ELSE 0 END) AS savings
-         FROM nest.transactions WHERE household_id=$1 AND date >= $2`,
-        [auth.householdId, monthStart]
+         FROM nest.transactions WHERE household_id=$1 AND date BETWEEN $2 AND $3`,
+        [auth.householdId, cycle.start, cycle.endInclusive]
       ),
       pool.query(
         `SELECT source, type, SUM(amount) AS total FROM nest.transactions
-         WHERE household_id=$1 AND date >= $2 GROUP BY source, type`,
-        [auth.householdId, monthStart]
+         WHERE household_id=$1 AND date BETWEEN $2 AND $3 GROUP BY source, type`,
+        [auth.householdId, cycle.start, cycle.endInclusive]
       ),
       pool.query(
         `SELECT description, SUM(amount) AS total, COUNT(*) AS count FROM nest.transactions
-         WHERE household_id=$1 AND type='expense' AND date >= $2
+         WHERE household_id=$1 AND type='expense' AND date BETWEEN $2 AND $3
          GROUP BY description ORDER BY total DESC LIMIT 6`,
-        [auth.householdId, monthStart]
+        [auth.householdId, cycle.start, cycle.endInclusive]
       )
     ])
     const income = parseFloat(summaryRes.rows[0]?.income || 0)
@@ -65,7 +66,8 @@ module.exports = async function handler(req, res) {
       currentMonth: { income, expenses, net: income - expenses },
       accountBreakdown: accountRes.rows,
       topMerchants: merchantRes.rows,
-      savingsThisMonth
+      savingsThisMonth,
+      cycle
     })
   } catch (err) { console.error(err); res.status(500).json({ message: 'Server error' }) }
 }
