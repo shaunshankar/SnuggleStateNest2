@@ -25,7 +25,52 @@ export default function Transactions() {
   const [accountType, setAccountType] = useState('everyday')
   const [bank, setBank] = useState('anz')
   const [parsing, setParsing] = useState(false)
+  const [categorising, setCategorising] = useState(false)
   const catTimer = useRef(null)
+
+  // Fill categories for rows the local rules left as 'other', using AI.
+  async function autoCategorise(rows) {
+    const targets = rows.map((r, i) => ({ r, i })).filter(x => x.r.type === 'expense' && x.r.category === 'other')
+    if (!targets.length) return
+    setCategorising(true)
+    try {
+      const { categories } = await api.post('/ai/categorise-batch', { descriptions: targets.map(x => x.r.description) })
+      setParsedRows(prev => {
+        if (!prev) return prev
+        const copy = [...prev]
+        targets.forEach((x, k) => {
+          const c = (categories[k] || '').toLowerCase().trim()
+          if (c && CATEGORIES.includes(c)) copy[x.i] = { ...copy[x.i], category: c }
+        })
+        return copy
+      })
+    } catch (err) {
+      toast.error('AI categorisation skipped: ' + err.message)
+    } finally {
+      setCategorising(false)
+    }
+  }
+
+  // Manual: re-run AI over every expense row (button in the preview).
+  async function recategoriseAll() {
+    if (!parsedRows) return
+    const targets = parsedRows.map((r, i) => ({ r, i })).filter(x => x.r.type === 'expense')
+    if (!targets.length) return
+    setCategorising(true)
+    try {
+      const { categories } = await api.post('/ai/categorise-batch', { descriptions: targets.map(x => x.r.description) })
+      setParsedRows(prev => {
+        const copy = [...prev]
+        targets.forEach((x, k) => {
+          const c = (categories[k] || '').toLowerCase().trim()
+          if (c && CATEGORIES.includes(c)) copy[x.i] = { ...copy[x.i], category: c }
+        })
+        return copy
+      })
+      toast.success('Re-categorised with AI')
+    } catch (err) { toast.error(err.message) }
+    finally { setCategorising(false) }
+  }
 
   useEffect(() => { loadTransactions() }, [filters])
 
@@ -101,6 +146,7 @@ export default function Transactions() {
           const rows = parseAnzCsv(text).map(r => ({ ...r, source: accountType }))
           if (!rows.length) return toast.error('No transactions found in file')
           setParsedRows(rows)
+          autoCategorise(rows)
         } catch (err) {
           toast.error('Failed to parse CSV: ' + err.message)
         }
@@ -377,7 +423,15 @@ export default function Transactions() {
                   <button className="btn btn-ghost btn-sm" onClick={() => setParsedRows(r => r.map(x => ({ ...x, selected: true })))}>Select all</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => setParsedRows(r => r.map(x => ({ ...x, selected: false })))}>Deselect all</button>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginLeft: 4 }}>{parsedRows.length} total rows</span>
+                  <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} onClick={recategoriseAll} disabled={categorising}>
+                    ✨ {categorising ? 'Categorising…' : 'Re-categorise with AI'}
+                  </button>
                 </div>
+                {categorising && (
+                  <div style={{ fontSize: '0.76rem', color: 'var(--gold-light)', marginBottom: 8 }}>
+                    AI is categorising your transactions — categories will update automatically.
+                  </div>
+                )}
 
                 {/* Preview table */}
                 <div style={{ maxHeight: 420, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>

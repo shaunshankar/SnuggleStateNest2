@@ -49,6 +49,23 @@ module.exports = async function handler(req, res) {
     } catch { return res.json({ category: 'other' }) }
   }
 
+  // ── Categorise a batch of descriptions (import fallback) ────────
+  if (action === 'categorise-batch') {
+    const { descriptions } = req.body || {}
+    if (!Array.isArray(descriptions) || !descriptions.length)
+      return res.status(400).json({ message: 'descriptions required' })
+    try {
+      const numbered = descriptions.map((d, i) => `${i + 1}. ${d}`).join('\n')
+      const text = await callClaude({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: Math.min(4096, descriptions.length * 6 + 200),
+        prompt: `Assign each transaction below exactly one budget category from this list:\n[${CATEGORIES}]\n\nReturn ONLY a JSON array of lowercase category strings, one per transaction, in the same order as the numbered list. The array length must equal the number of transactions. No other text.\n\nTransactions:\n${numbered}`
+      })
+      const cats = extractJson(text, 'array')
+      return res.json({ categories: Array.isArray(cats) ? cats : [] })
+    } catch (err) { console.error(err); return res.status(500).json({ message: err.message || 'Failed to categorise' }) }
+  }
+
   // ── Parse any bank/card statement CSV into transactions ─────────
   if (action === 'import') {
     const { csv, accountType } = req.body || {}

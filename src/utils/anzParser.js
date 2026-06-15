@@ -19,13 +19,91 @@ function parseCsvLine(line) {
   return result
 }
 
+// Order matters: more specific categories are checked before broader ones.
+// Patterns are matched as uppercase substrings of the raw description.
 const MERCHANT_RULES = [
-  { category: 'groceries',     patterns: ['SUPABARN', 'WOOLWORTHS', 'COLES', 'IGA', 'ALDI', 'FOODWORKS'] },
-  { category: 'transport',     patterns: ['UBER *TRIP', 'METRO PETROLEUM', '7-ELEVEN', 'WILSON PARKING', 'POINTPARKING', 'BP ', 'SHELL', 'CALTEX'] },
-  { category: 'dining',        patterns: ['KFC', 'GYG', 'GAMI', 'MANOOSH', 'UBER *EATS', 'SHARETEA', 'LOKMA', 'KINGSLEY', 'NOI NOI', 'BARTON KEBAB', 'PENNYWORTH', 'ANTAKYA', ' HJS', 'YOGIS KITCHEN', 'EQ BAKEHOUSE', 'GONG CHA', 'MR SHISH', 'BIANCO DOME'] },
-  { category: 'health',        patterns: ['MEDIBANK', 'BUPA', 'CHEMIST', 'PHARMACY'] },
-  { category: 'entertainment', patterns: ['SPORTSBET', 'TICKETEK', 'RSL ART UNION', 'TOY FARM', 'VENUES CANBERRA', 'BRUMBIES', 'LMCT'] },
-  { category: 'personal_care', patterns: ['AFTERPAY', 'APPLE.COM'] },
+  // ── Subscriptions (checked before shopping so "AMAZON PRIME" wins) ──
+  { category: 'subscriptions', patterns: [
+    'NETFLIX', 'SPOTIFY', 'DISNEY', 'DISNEYPLUS', 'AMAZON PRIME', 'PRIME VIDEO', 'STAN.COM', 'BINGE', 'FOXTEL', 'KAYO', 'PARAMOUNT',
+    'APPLE.COM/BILL', 'APPLE MUSIC', 'ITUNES', 'ICLOUD', 'YOUTUBEPREMIUM', 'YOUTUBE PREMIUM', 'GOOGLE STORAGE', 'GOOGLE*', 'GOOGLE ONE',
+    'MICROSOFT', 'OFFICE 365', 'MICROSOFT 365', 'ADOBE', 'DROPBOX', 'CANVA', 'NOTION', 'CHATGPT', 'OPENAI', 'ANTHROPIC', 'CLAUDE.AI',
+    'AUDIBLE', 'PATREON', 'SUBSTACK', 'LINKEDIN', 'NINTENDO', 'PLAYSTATION', 'PLAYSTATIONNETWORK', 'XBOX', 'STEAMGAMES', 'TWITCH',
+    'NYTIMES', 'THE AGE', 'NEWS LIMITED', 'AUDIOBOOK', 'DUOLINGO', 'STRAVA', 'AMAZON KINDLE'
+  ] },
+  // ── Insurance ──
+  { category: 'insurance', patterns: [
+    'NRMA', 'AAMI', 'ALLIANZ', 'BUDGET DIRECT', 'YOUI', 'RACV', 'RACQ', 'RAC INSURANCE', 'SUNCORP', 'GIO', 'QBE', 'AIA', 'TAL ',
+    'BINGLE', 'APIA', 'REAL INSURANCE', 'WOOLWORTHS INSURANCE', 'COLES INSURANCE', 'INSURANCE', 'COMPARETHEMARKET'
+  ] },
+  // ── Utilities (energy / water / telco / internet) ──
+  { category: 'utilities', patterns: [
+    'ORIGIN ENERGY', 'AGL', 'ENERGYAUSTRALIA', 'ENERGY AUSTRALIA', 'RED ENERGY', 'ALINTA', 'ACTEWAGL', 'SIMPLY ENERGY', 'POWERSHOP', 'ERGON', 'MOMENTUM ENERGY',
+    'TELSTRA', 'OPTUS', 'VODAFONE', 'TPG', 'AUSSIE BROADBAND', 'IINET', 'BELONG', 'SUPERLOOP', 'DODO', 'TANGERINE', 'MORE TELECOM', 'AMAYSIM', 'BOOST MOBILE', 'FELIX MOBILE',
+    'SYDNEY WATER', 'ICON WATER', 'YARRA VALLEY WATER', 'SA WATER', 'WATER CORP', 'UNITYWATER'
+  ] },
+  // ── Groceries ──
+  { category: 'groceries', patterns: [
+    'WOOLWORTHS', 'COLES', 'ALDI', 'IGA', 'FOODWORKS', 'SUPABARN', 'COSTCO', 'HARRIS FARM', 'METCASH', 'DRAKES', 'FRIENDLY GROCER', 'SPUDSHED', 'NQR', 'SUPA IGA'
+  ] },
+  // ── Transport (rideshare / fuel / tolls / parking / public transport) ──
+  { category: 'transport', patterns: [
+    'UBER *TRIP', 'UBER TRIP', 'OLA ', 'DIDI', 'SHEBAH', '13CABS', 'TAXI', 'CABCHARGE',
+    'OPAL', 'MYKI', 'GO CARD', 'TRANSPORT FOR NSW', 'TRANSPORTNSW', 'PTV ', 'METRO TRAINS', 'TRANSLINK',
+    'LINKT', 'E-TOLL', 'ETOLL', 'EASTLINK', 'CITYLINK', 'TOLL',
+    'BP ', 'SHELL', 'CALTEX', 'AMPOL', '7-ELEVEN', 'UNITED PETROLEUM', 'METRO PETROLEUM', 'MOBIL', 'LIBERTY', 'OTR ', 'COSTCO FUEL', 'PUMA ENERGY', 'EG FUEL',
+    'WILSON PARKING', 'SECURE PARKING', 'CARE PARK', 'POINTPARKING', 'PARKING', 'CITY OF SYDNEY PARK'
+  ] },
+  // ── Dining / cafes / takeaway / delivery ──
+  { category: 'dining', patterns: [
+    'MCDONALD', 'KFC', 'HUNGRY JACK', 'GUZMAN', 'GYG', 'DOMINO', 'PIZZA', 'NANDOS', 'SUBWAY', "GRILL'D", 'GRILLD', 'ZAMBRERO', 'RED ROOSTER', 'OPORTO', 'BETTY', 'SUSHI', 'GAMI', 'MANOOSH',
+    'UBER *EATS', 'UBER EATS', 'UBEREATS', 'MENULOG', 'DELIVEROO', 'DOORDASH', 'EASI ',
+    'STARBUCKS', 'GLORIA JEAN', 'GONG CHA', 'SHARETEA', 'CHATIME', 'BOOST JUICE',
+    'CAFE', 'COFFEE', 'RESTAURANT', 'BAR ', 'BAKERY', 'BAKEHOUSE', 'KEBAB', 'BURGER', 'NOODLE', 'THAI', 'INDIAN', 'CHINESE', 'BISTRO', 'TAVERN', 'BREWERY', 'PUB',
+    'LOKMA', 'KINGSLEY', 'NOI NOI', 'BARTON KEBAB', 'PENNYWORTH', 'ANTAKYA', ' HJS', 'YOGIS KITCHEN', 'EQ BAKEHOUSE', 'MR SHISH', 'BIANCO DOME'
+  ] },
+  // ── Health / pharmacy / medical ──
+  { category: 'health', patterns: [
+    'MEDIBANK', 'BUPA', 'NIB', 'HCF', 'AHM', 'AUSTRALIAN UNITY',
+    'CHEMIST WAREHOUSE', 'CHEMIST', 'PHARMACY', 'PRICELINE', 'TERRY WHITE', 'AMCAL', 'GUARDIAN PHARM',
+    'MEDICAL', 'DENTAL', 'DENTIST', 'PHYSIO', 'OPTOMETRIST', 'SPECSAVERS', 'OPSM', 'PATHOLOGY', 'CLINIC', 'HOSPITAL', 'DR ', 'PSYCHOLOG', 'CHIROPRACT'
+  ] },
+  // ── Fitness ──
+  { category: 'fitness', patterns: [
+    'ANYTIME FITNESS', 'FITNESS FIRST', 'GOODLIFE', 'JETTS', 'F45', 'SNAP FITNESS', 'PLUS FITNESS', 'CROSSFIT', 'GYM', 'YMCA', 'CLASSPASS', 'PILATES', 'YOGA', 'AQUATIC', 'LEISURE CENTRE'
+  ] },
+  // ── Shopping / retail (after subscriptions so Amazon Prime is excluded) ──
+  { category: 'shopping', patterns: [
+    'KMART', 'TARGET', 'BIG W', 'BUNNINGS', 'IKEA', 'JB HI-FI', 'JBHIFI', 'HARVEY NORMAN', 'OFFICEWORKS', 'THE GOOD GUYS', 'MYER', 'DAVID JONES',
+    'COTTON ON', 'UNIQLO', 'H&M', 'ZARA', 'COUNTRY ROAD', 'GENERAL PANTS', 'UNIVERSAL STORE', 'THE ICONIC', 'ASOS',
+    'MECCA', 'SEPHORA', 'CHEMIST WAREHOUSE BEAUTY',
+    'REBEL', 'BCF', 'SUPERCHEAP', 'ANACONDA', 'CATCH', 'KOGAN', 'TEMU', 'SHEIN', 'EBAY', 'ETSY', 'AMAZON MKTP', 'AMZN MKTP', 'AMAZON AU', 'AMAZON.COM.AU', 'APPLE STORE', 'AFTERPAY', 'ZIPPAY', 'ZIP*', 'ZIPMONEY'
+  ] },
+  // ── Entertainment / events / gambling ──
+  { category: 'entertainment', patterns: [
+    'TICKETEK', 'TICKETMASTER', 'EVENTBRITE', 'MOSHTIX', 'HOYTS', 'EVENT CINEMAS', 'VILLAGE CINEMAS', 'DENDY', 'PALACE CINEMA', 'CINEMA',
+    'SPORTSBET', 'TAB', 'BET365', 'LADBROKES', 'NEDS', 'POINTSBET', 'DABBLE', 'BETEASY',
+    'RSL ART UNION', 'TOY FARM', 'VENUES CANBERRA', 'BRUMBIES', 'LMCT', 'GOLF', 'BOWLING', 'ZOO', 'AQUARIUM', 'MUSEUM'
+  ] },
+  // ── Housing / rent / rates ──
+  { category: 'housing', patterns: [
+    'RAY WHITE', 'LJ HOOKER', 'REAL ESTATE', 'PROPERTY MANAGE', 'RENTAL', 'STRATA', 'COUNCIL RATES', 'CITY COUNCIL', 'SHIRE COUNCIL', 'BODY CORP'
+  ] },
+  // ── Education ──
+  { category: 'education', patterns: [
+    'UNIVERSITY', 'TAFE', 'UDEMY', 'COURSERA', 'SKILLSHARE', 'TEXTBOOK', 'STUDENT', 'TUITION', 'CHILDCARE', 'EARLY LEARNING', 'KINDERGARTEN'
+  ] },
+  // ── Gifts / donations / charity ──
+  { category: 'gifts', patterns: [
+    'RED CROSS', 'UNICEF', 'WORLD VISION', 'RSPCA', 'SALVATION ARMY', 'SALVOS', 'GOFUNDME', 'DONATION', 'OXFAM', 'CANCER COUNCIL', 'BEYOND BLUE', 'SMITH FAMILY'
+  ] },
+  // ── Personal care ──
+  { category: 'personal_care', patterns: [
+    'HAIRDRESS', 'BARBER', 'SALON', 'NAILS', 'SPA ', 'BEAUTY', 'WAXING', 'BROW', 'LASH', 'MASSAGE'
+  ] },
+  // ── Bank fees / charges ──
+  { category: 'fees', patterns: [
+    'ACCOUNT FEE', 'ANNUAL FEE', 'MONTHLY FEE', 'SERVICE FEE', 'OVERDRAWN', 'DISHONOUR', 'LATE FEE', 'FOREIGN TRANSACTION', 'INTERNATIONAL TRANSACTION', 'INTEREST CHARGE', 'CASH ADVANCE FEE'
+  ] },
 ]
 
 function categoriseRaw(raw, type) {
