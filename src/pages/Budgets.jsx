@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Plus, Pencil, Trash2, TrendingUp, Sparkles } from 'lucide-react'
+import { Plus, Pencil, Trash2, TrendingUp, Sparkles, Wand2, X } from 'lucide-react'
 import { api } from '../utils/api'
+import { useAuth } from '../hooks/useAuth'
 import { formatCurrency } from '../utils/formatters'
 import { CATEGORIES, CATEGORY_ICONS, CATEGORY_COLOURS } from '../utils/categories'
 import ProgressBar from '../components/ProgressBar'
@@ -16,6 +17,13 @@ export default function Budgets() {
   const [saving, setSaving] = useState(false)
   const [insights, setInsights] = useState('')
   const [insightsLoading, setInsightsLoading] = useState(false)
+  const { user } = useAuth()
+  const [showAssistant, setShowAssistant] = useState(false)
+  const [planIncome, setPlanIncome] = useState('')
+  const [avgSpending, setAvgSpending] = useState([])
+  const [plan, setPlan] = useState(null)
+  const [planLoading, setPlanLoading] = useState(false)
+  const [applying, setApplying] = useState(false)
 
   async function handleInsights() {
     setInsightsLoading(true)
@@ -25,6 +33,63 @@ export default function Budgets() {
       setInsights(insights)
     } catch (err) { toast.error(err.message) }
     finally { setInsightsLoading(false) }
+  }
+
+  async function openAssistant() {
+    setPlan(null)
+    setShowAssistant(true)
+    try {
+      const reports = await api.get('/reports')
+      // categoryBreakdown totals span ~3 months → average per month
+      const spend = (reports.categoryBreakdown || [])
+        .filter(r => r.type === 'expense')
+        .map(r => ({ category: r.category, avgMonthly: parseFloat(r.total) / 3 }))
+      setAvgSpending(spend)
+      const incomeGuess = parseFloat(user?.monthly_income) || reports.currentMonth?.income || ''
+      setPlanIncome(incomeGuess ? String(Math.round(incomeGuess)) : '')
+    } catch (err) { toast.error(err.message) }
+  }
+
+  async function generatePlan() {
+    if (!planIncome || parseFloat(planIncome) <= 0) return toast.error('Enter your monthly income first')
+    setPlanLoading(true)
+    try {
+      const { plan } = await api.post('/ai/budget-plan', {
+        income: parseFloat(planIncome),
+        spending: avgSpending,
+        existing: budgets.map(b => ({ category: b.category, monthly_limit: parseFloat(b.monthly_limit) }))
+      })
+      if (!plan?.length) { toast('Could not build a plan from your data', { icon: '🤔' }); return }
+      setPlan(plan
+        .filter(p => CATEGORIES.includes(p.category) && p.category !== 'income' && p.category !== 'other')
+        .map(p => ({
+          category: p.category,
+          monthly_limit: Math.max(0, Math.round(parseFloat(p.monthly_limit) || 0)),
+          reason: p.reason || '',
+          selected: true
+        })))
+    } catch (err) { toast.error(err.message) }
+    finally { setPlanLoading(false) }
+  }
+
+  function updatePlan(idx, field, value) {
+    setPlan(rows => rows.map((r, i) => i === idx ? { ...r, [field]: value } : r))
+  }
+
+  async function applyPlan() {
+    const selected = plan.filter(p => p.selected && p.monthly_limit > 0)
+    if (!selected.length) return toast.error('Nothing selected')
+    setApplying(true)
+    try {
+      for (const p of selected) {
+        await api.post('/budgets', { category: p.category, monthly_limit: p.monthly_limit })
+      }
+      toast.success(`Applied ${selected.length} budget${selected.length !== 1 ? 's' : ''}`)
+      setShowAssistant(false)
+      setPlan(null)
+      loadBudgets()
+    } catch (err) { toast.error(err.message) }
+    finally { setApplying(false) }
   }
 
   const now = new Date()
@@ -81,9 +146,14 @@ export default function Budgets() {
           <h2>Budget Manager</h2>
           <p>{daysLeft} days left in {now.toLocaleString('en-AU', { month: 'long' })}</p>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={openAdd}>
-          <Plus size={15} /> Add Budget
-        </button>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button className="btn btn-secondary btn-sm" onClick={openAssistant}>
+            <Wand2 size={15} /> AI budget assistant
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={openAdd}>
+            <Plus size={15} /> Add Budget
+          </button>
+        </div>
       </div>
 
       {/* Summary row */}
@@ -187,6 +257,84 @@ export default function Budgets() {
                 <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* AI budget assistant */}
+      {showAssistant && (
+        <div className="modal-overlay" onClick={() => { if (!applying && !planLoading) setShowAssistant(false) }}>
+          <div className="modal modal-wide" style={{ maxWidth: 680 }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}><Wand2 size={18} color="var(--gold)" /> AI budget assistant</h3>
+              {!applying && !planLoading && <button className="btn btn-ghost btn-icon" onClick={() => setShowAssistant(false)}><X size={18} /></button>}
+            </div>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.82rem', marginBottom: 16 }}>
+              I'll suggest monthly limits from your income and recent spending. Review, tweak, and apply the ones you like.
+            </p>
+
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', marginBottom: 16 }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label>Monthly take-home income ($)</label>
+                <input type="number" step="1" min="0" value={planIncome} onChange={e => setPlanIncome(e.target.value)} placeholder="e.g. 6000" />
+              </div>
+              <button className="btn btn-primary" onClick={generatePlan} disabled={planLoading}>
+                {planLoading ? 'Building…' : plan ? 'Regenerate' : 'Generate plan'}
+              </button>
+            </div>
+
+            {plan && (() => {
+              const total = plan.filter(p => p.selected).reduce((s, p) => s + (parseFloat(p.monthly_limit) || 0), 0)
+              const income = parseFloat(planIncome) || 0
+              const over = total > income
+              return (
+                <>
+                  <div style={{ maxHeight: 360, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-card)', zIndex: 1 }}>
+                        <tr>
+                          {['', 'Category', 'Limit', 'Why'].map((h, i) => (
+                            <th key={i} style={{ padding: '10px 10px', textAlign: 'left', fontSize: '0.7rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: '1px solid var(--border)' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {plan.map((p, i) => (
+                          <tr key={i} style={{ opacity: p.selected ? 1 : 0.4 }}>
+                            <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                              <input type="checkbox" checked={p.selected} onChange={e => updatePlan(i, 'selected', e.target.checked)} style={{ width: 14, height: 14, cursor: 'pointer' }} />
+                            </td>
+                            <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: '0.84rem', whiteSpace: 'nowrap', textTransform: 'capitalize' }}>
+                              {CATEGORY_ICONS[p.category]} {p.category.replace('_', ' ')}
+                            </td>
+                            <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                              <input type="number" step="1" min="0" value={p.monthly_limit} onChange={e => updatePlan(i, 'monthly_limit', parseFloat(e.target.value) || 0)}
+                                style={{ background: 'var(--bg-input)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 6, color: 'var(--text-primary)', padding: '4px 8px', fontSize: '0.8rem', width: 90 }} />
+                            </td>
+                            <td style={{ padding: '6px 10px', borderBottom: '1px solid rgba(255,255,255,0.04)', fontSize: '0.76rem', color: 'var(--text-muted)' }}>{p.reason}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, fontSize: '0.84rem' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      Total: <strong style={{ color: over ? 'var(--danger)' : 'var(--success)' }}>{formatCurrency(total)}</strong>
+                      {income > 0 && <span style={{ color: 'var(--text-muted)' }}> of {formatCurrency(income)} income</span>}
+                      {over && <span style={{ color: 'var(--danger)' }}> — over income</span>}
+                    </span>
+                  </div>
+
+                  <div className="modal-actions" style={{ marginTop: 12 }}>
+                    <button className="btn btn-ghost" onClick={() => setShowAssistant(false)} disabled={applying}>Cancel</button>
+                    <button className="btn btn-primary" onClick={applyPlan} disabled={applying || plan.filter(p => p.selected).length === 0}>
+                      {applying ? 'Applying…' : `Apply ${plan.filter(p => p.selected).length} budgets`}
+                    </button>
+                  </div>
+                </>
+              )
+            })()}
           </div>
         </div>
       )}

@@ -102,6 +102,25 @@ module.exports = async function handler(req, res) {
     } catch (err) { console.error(err); return res.status(500).json({ message: err.message || 'Failed to analyse transactions' }) }
   }
 
+  // ── Suggest a full budget plan (income + spending history) ──────
+  if (action === 'budget-plan') {
+    const { income, spending, existing } = req.body || {}
+    const spendLines = (spending || [])
+      .map(s => `- ${s.category}: avg $${parseFloat(s.avgMonthly || 0).toFixed(2)}/month`)
+      .join('\n') || '(no spending history yet)'
+    const existingLines = (existing || [])
+      .map(b => `- ${b.category}: $${parseFloat(b.monthly_limit).toFixed(2)}`)
+      .join('\n') || '(none set)'
+    try {
+      const text = await callClaude({
+        model: 'claude-sonnet-4-6', max_tokens: 1500,
+        prompt: `You are a friendly Australian budgeting assistant. Build a realistic monthly budget for a household.\n\nMonthly take-home income: $${parseFloat(income || 0).toFixed(2)}\n\nAverage monthly spending by category (last ~3 months):\n${spendLines}\n\nExisting budgets:\n${existingLines}\n\nRecommend a monthly limit for each relevant spending category. Guidelines:\n- Base limits on actual spending but trim obvious excess; round to neat numbers.\n- Use the 50/30/20 idea loosely (needs/wants/savings) as a sanity check.\n- Keep the TOTAL of all limits at or below income, leaving room to save.\n- Only use these categories: housing, groceries, transport, utilities, entertainment, dining, health, personal_care, education, subscriptions, insurance, shopping, fitness, gifts, fees, savings. Do not include "income" or "other".\n- Include a "savings" line for the leftover.\n\nReturn ONLY a JSON array, no other text:\n[{"category": string, "monthly_limit": number, "reason": short string (max ~12 words)}]`
+      })
+      const plan = extractJson(text, 'array')
+      return res.json({ plan: Array.isArray(plan) ? plan : [] })
+    } catch (err) { console.error(err); return res.status(500).json({ message: err.message || 'Failed to build budget plan' }) }
+  }
+
   // ── Financial insights (spending / budget / dashboard) ──────────
   if (action === 'insights') {
     const { mode, payload } = req.body || {}
